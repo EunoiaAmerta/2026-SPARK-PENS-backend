@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("SparkPens.Api")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+300fd88ddf67c47a7aa3623d6e00a415bfb90c15")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+6f906abef5fdc09ca5d9f4d9cddf90036102c3eb")]
 [assembly: System.Reflection.AssemblyProductAttribute("SparkPens.Api")]
 [assembly: System.Reflection.AssemblyTitleAttribute("SparkPens.Api")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

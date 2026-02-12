@@ -3,9 +3,20 @@ using SparkPens.Api.Data;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Tambahkan ini:
+// 1. Database Configuration
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+// 2. CORS Configuration (Penting untuk Frontend!)
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowFrontend", policy =>
+    {
+        policy.WithOrigins("http://localhost:3000", "http://localhost:5173") // Port React/Vite
+              .AllowAnyHeader()
+              .AllowAnyMethod();
+    });
+});
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
@@ -13,25 +24,22 @@ builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
-// Pindahkan ini ke paling atas pipeline agar selalu bisa diakses
+// 3. Swagger Setup
 app.UseSwagger();
 app.UseSwaggerUI(options =>
 {
-    // Ini penting! Memberitahu Swagger UI untuk mencari endpoint default
     options.SwaggerEndpoint("/swagger/v1/swagger.json", "v1");
-    options.RoutePrefix = "swagger"; // Menjamin akses lewat http://localhost:5151/swagger
+    options.RoutePrefix = "swagger"; 
 });
 
-if (app.Environment.IsDevelopment())
-{
-   // app.MapOpenApi();
-}
-
+// 4. Middleware Pipeline
 app.UseHttpsRedirection();
 
-app.UseHttpsRedirection();
-app.UseAuthorization(); // Tambahkan ini sebelum MapControllers jika ada
+// Gunakan Policy CORS yang sudah dibuat di atas
+app.UseCors("AllowFrontend"); 
+
+app.UseAuthorization();
+
 app.MapControllers();
+
 app.Run();
-
-
