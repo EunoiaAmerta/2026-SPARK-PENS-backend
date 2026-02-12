@@ -13,10 +13,18 @@ builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
+// Pindahkan ini ke paling atas pipeline agar selalu bisa diakses
+app.UseSwagger();
+app.UseSwaggerUI(options =>
+{
+    // Ini penting! Memberitahu Swagger UI untuk mencari endpoint default
+    options.SwaggerEndpoint("/swagger/v1/swagger.json", "v1");
+    options.RoutePrefix = "swagger"; // Menjamin akses lewat http://localhost:5151/swagger
+});
+
 if (app.Environment.IsDevelopment())
 {
-    app.MapOpenApi();
+   // app.MapOpenApi();
 }
 
 app.UseHttpsRedirection();
@@ -40,6 +48,9 @@ app.MapGet("/weatherforecast", () =>
 })
 .WithName("GetWeatherForecast");
 
+app.UseHttpsRedirection();
+app.UseAuthorization(); // Tambahkan ini sebelum MapControllers jika ada
+app.MapControllers();
 app.Run();
 
 record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
