@@ -10,12 +10,10 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 // 2. CORS Configuration (Penting untuk Frontend!)
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowFrontend", policy =>
-    {
-        policy.WithOrigins("http://localhost:3000", "http://localhost:5173") // Port React/Vite
-              .AllowAnyHeader()
-              .AllowAnyMethod();
-    });
+    options.AddPolicy("AllowAll",
+        policy => policy.AllowAnyOrigin() // Di produksi nanti ini harus spesifik URL Frontend
+                        .AllowAnyMethod()
+                        .AllowAnyHeader());
 });
 
 builder.Services.AddControllers();
@@ -36,7 +34,7 @@ app.UseSwaggerUI(options =>
 app.UseHttpsRedirection();
 
 // Gunakan Policy CORS yang sudah dibuat di atas
-app.UseCors("AllowFrontend"); 
+app.UseCors("AllowAll"); 
 
 app.UseAuthorization();
 
