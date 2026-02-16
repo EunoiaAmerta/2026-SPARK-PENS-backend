@@ -10,8 +10,8 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 // 2. CORS Configuration (Penting untuk Frontend!)
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAll",
-        policy => policy.AllowAnyOrigin() // Di produksi nanti ini harus spesifik URL Frontend
+    options.AddPolicy("AllowVercel",
+        policy => policy.WithOrigins("https://sparkpens.vercel.app") // Di produksi nanti ini harus spesifik URL Frontend
                         .AllowAnyMethod()
                         .AllowAnyHeader());
 });
@@ -34,7 +34,7 @@ app.UseSwaggerUI(options =>
 app.UseHttpsRedirection();
 
 // Gunakan Policy CORS yang sudah dibuat di atas
-app.UseCors("AllowAll"); 
+app.UseCors("AllowVercel");
 
 app.UseAuthorization();
 
