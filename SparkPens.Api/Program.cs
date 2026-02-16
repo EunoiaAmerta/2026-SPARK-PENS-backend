@@ -1,4 +1,7 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
 using SparkPens.Api.Data;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -7,13 +10,40 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
-// 2. CORS Configuration (Penting untuk Frontend!)
+// 2. JWT Authentication Configuration
+var jwtKey = builder.Configuration["Jwt:Key"] ?? "SparkPensDefaultSecretKey12345678901234567890";
+var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "SparkPens";
+var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "SparkPensUsers";
+
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateLifetime = true,
+        ValidateIssuerSigningKey = true,
+        ValidIssuer = jwtIssuer,
+        ValidAudience = jwtAudience,
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
+    };
+});
+
+builder.Services.AddAuthorization();
+
+// 3. CORS Configuration (Penting untuk Frontend!)
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowVercel",
         policy => policy.WithOrigins("https://sparkpens.vercel.app") // Di produksi nanti ini harus spesifik URL Frontend
                         .AllowAnyMethod()
-                        .AllowAnyHeader());
+                        .AllowAnyHeader()
+                        .AllowCredentials());
 });
 
 builder.Services.AddControllers();
@@ -36,6 +66,7 @@ app.UseHttpsRedirection();
 // Gunakan Policy CORS yang sudah dibuat di atas
 app.UseCors("AllowVercel");
 
+app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
