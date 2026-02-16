@@ -18,12 +18,15 @@ FROM build AS publish
 RUN dotnet publish "SparkPens.Api.csproj" -c Release -o /app/publish /p:UseAppHost=false
 
 # Stage 3: Final Image
-
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
-ENV ASPNETCORE_URLS=http://0.0.0.0:${PORT}
-COPY --from=publish /app/publish .
-ENTRYPOINT ["dotnet", "SparkPens.Api.dll"]
+
+# Expose port yang digunakan Railway
+EXPOSE $PORT
+
+# Konfigurasi environment untuk Railway
+ENV ASPNETCORE_URLS=http://0.0.0.0:$PORT
+ENV DOTNET_RUNNING_IN_CONTAINER=true
 
 # Copy hasil publish dari stage sebelumnya
 COPY --from=publish /app/publish .
