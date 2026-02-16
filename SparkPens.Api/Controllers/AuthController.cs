@@ -1,6 +1,7 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
+using BCrypt.Net;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -25,47 +26,39 @@ public class AuthController : ControllerBase
     }
 
     /// <summary>
-    /// Admin login with username/password (admin/admin)
+    /// Admin login with username/password
     /// </summary>
     [HttpPost("login")]
     public async Task<IActionResult> Login([FromBody] LoginDto loginDto)
     {
-        // Hardcoded admin credentials for demo
-        if (loginDto.Username == "admin" && loginDto.Password == "admin")
+        // Find user by email/username
+        var user = await _context.Users
+            .FirstOrDefaultAsync(u => u.Email == loginDto.Username || u.Name == loginDto.Username);
+        
+        if (user == null)
         {
-            // Check if admin user exists in database, if not create
-            var adminUser = await _context.Users.FirstOrDefaultAsync(u => u.Role == "Admin");
-            
-            if (adminUser == null)
-            {
-                adminUser = new User
-                {
-                    Email = "admin@sparkpens.com",
-                    Name = "Administrator",
-                    Role = "Admin",
-                    PasswordHash = "admin", // In production, use proper hashing!
-                    CreatedAt = DateTime.UtcNow
-                };
-                _context.Users.Add(adminUser);
-                await _context.SaveChangesAsync();
-            }
-
-            var token = GenerateJwtToken(adminUser);
-            
-            return Ok(new AuthResponseDto
-            {
-                Token = token,
-                User = new UserDto
-                {
-                    Id = adminUser.Id,
-                    Email = adminUser.Email,
-                    Name = adminUser.Name,
-                    Role = adminUser.Role
-                }
-            });
+            return Unauthorized(new { message = "User not found" });
+        }
+        
+        // Verify password using BCrypt
+        if (!BCrypt.Net.BCrypt.Verify(loginDto.Password, user.PasswordHash))
+        {
+            return Unauthorized(new { message = "Invalid credentials" });
         }
 
-        return Unauthorized(new { message = "Invalid credentials" });
+        var token = GenerateJwtToken(user);
+        
+        return Ok(new AuthResponseDto
+        {
+            Token = token,
+            User = new UserDto
+            {
+                Id = user.Id,
+                Email = user.Email,
+                Name = user.Name,
+                Role = user.Role
+            }
+        });
     }
 
     /// <summary>

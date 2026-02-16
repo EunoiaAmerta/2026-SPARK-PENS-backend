@@ -40,7 +40,11 @@ builder.Services.AddAuthorization();
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowVercel",
-        policy => policy.WithOrigins("https://sparkpens.vercel.app") // Di produksi nanti ini harus spesifik URL Frontend
+        policy => policy.WithOrigins(
+            "https://sparkpens.vercel.app",
+            "http://localhost:5173",
+            "http://localhost:3000"
+        )
                         .AllowAnyMethod()
                         .AllowAnyHeader()
                         .AllowCredentials());
