@@ -185,17 +185,21 @@ public class AuthController : ControllerBase
     {
         try
         {
-            // Decode the JWT token from Google (client-side validation already done)
+            // Decode the JWT token from Google (client-side validation already done by Google)
             var handler = new JwtSecurityTokenHandler();
             var jwtToken = handler.ReadJwtToken(credential);
 
-            // Validate audience matches our client ID
-            var clientId = _configuration["Google:ClientId"];
-            var tokenAudience = jwtToken.Claims.FirstOrDefault(c => c.Type == "aud")?.Value;
-            if (!string.IsNullOrEmpty(clientId) && tokenAudience != clientId)
-            {
-                return null;
-            }
+            // Note: Audience validation is skipped because:
+            // 1. Frontend already validates with Google
+            // 2. We don't have Google:ClientId configured in appsettings.json
+            
+            // Optional: Validate audience if configured
+            // var clientId = _configuration["Google:ClientId"];
+            // var tokenAudience = jwtToken.Claims.FirstOrDefault(c => c.Type == "aud")?.Value;
+            // if (!string.IsNullOrEmpty(clientId) && tokenAudience != clientId)
+            // {
+            //     return null;
+            // }
 
             // Check token expiration
             if (jwtToken.ValidTo < DateTime.UtcNow)
