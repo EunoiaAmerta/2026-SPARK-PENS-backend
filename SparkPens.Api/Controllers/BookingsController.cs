@@ -28,13 +28,96 @@ namespace SparkPens.Api.Controllers
                 .ToListAsync();
         }
 
+        // GET: api/bookings/room/{roomId}?date={date}
+        // Untuk mendapatkan booking berdasarkan ruangan dan tanggal
+        [HttpGet("room/{roomId}")]
+        public async Task<ActionResult<IEnumerable<Booking>>> GetBookingsByRoom(
+            Guid roomId, 
+            [FromQuery] string? date = null)
+        {
+            // Use AsNoTracking and IgnoreQueryFilters for consistency
+            var query = _context.Bookings
+                .AsNoTracking()
+                .IgnoreQueryFilters()
+                .Include(b => b.Room)
+                .Where(b => b.RoomId == roomId && !b.IsDeleted);
+
+            // Filter berdasarkan tanggal jika disediakan
+            if (!string.IsNullOrEmpty(date))
+            {
+                if (DateTime.TryParse(date, out var filterDate))
+                {
+                    // Konversi ke UTC untuk PostgreSQL
+                    var startOfDay = DateTime.SpecifyKind(filterDate.Date, DateTimeKind.Utc);
+                    var endOfDay = DateTime.SpecifyKind(filterDate.Date.AddDays(1).AddTicks(-1), DateTimeKind.Utc);
+                    
+                    Console.WriteLine($"GetBookingsByRoom: Filtering for {startOfDay} to {endOfDay}");
+                    
+                    query = query.Where(b => 
+                        (b.BookingStartDate >= startOfDay && b.BookingStartDate < endOfDay) ||
+                        (b.BookingEndDate >= startOfDay && b.BookingEndDate < endOfDay) ||
+                        (b.BookingStartDate <= startOfDay && b.BookingEndDate >= endOfDay));
+                }
+            }
+
+            // Hanya ambil booking dengan status Pending atau Approved
+            query = query.Where(b => b.Status == "Pending" || b.Status == "Approved");
+
+            var result = await query.OrderBy(b => b.BookingStartDate).ToListAsync();
+            Console.WriteLine($"GetBookingsByRoom: Found {result.Count} bookings for room {roomId}");
+            
+            return result;
+        }
+
         // POST: api/bookings (Untuk Mahasiswa Booking)
         [HttpPost]
         public async Task<ActionResult<Booking>> CreateBooking(CreateBookingDto dto)
         {
             // Validasi apakah ruangan ada
-            var room = await _context.Rooms.FindAsync(dto.RoomId);
+            var room = await _context.Rooms.FirstOrDefaultAsync(r => r.Id == dto.RoomId);
             if (room == null) return BadRequest("Ruangan tidak ditemukan.");
+
+            // Validasi overlapping booking
+            var newStart = dto.BookingStartDate.ToUniversalTime();
+            var newEnd = dto.BookingEndDate.ToUniversalTime();
+
+            // Debug: Log the dates
+            Console.WriteLine($"New booking: {newStart} to {newEnd} for room {dto.RoomId}");
+
+            // Cek apakah ada booking yang overlap (status Pending atau Approved)
+            // Gunakan AsNoTracking() untuk bypass query filter dan ignore autoIncludes
+            var existingBookings = await _context.Bookings
+                .AsNoTracking()
+                .IgnoreQueryFilters()
+                .Where(b => b.RoomId == dto.RoomId && !b.IsDeleted)
+                .Where(b => b.Status == "Pending" || b.Status == "Approved")
+                .ToListAsync();
+
+            Console.WriteLine($"Found {existingBookings.Count} existing bookings for this room");
+
+            // Check for overlap
+            var overlappingBookings = existingBookings
+                .Where(b => newStart < b.BookingEndDate && newEnd > b.BookingStartDate)
+                .Select(b => new {
+                    b.BookingStartDate,
+                    b.BookingEndDate,
+                    b.RequesterName,
+                    b.Status
+                })
+                .ToList();
+
+            Console.WriteLine($"Found {overlappingBookings.Count} overlapping bookings");
+
+            if (overlappingBookings.Any())
+            {
+                var conflictDetails = string.Join(", ", overlappingBookings.Select(b => 
+                    $"{b.BookingStartDate:dd/MM/yyyy HH:mm} - {b.BookingEndDate:dd/MM/yyyy HH:mm} ({b.RequesterName}, {b.Status})"));
+                
+                return BadRequest(new { 
+                    message = "Ruangan sudah dipinjam pada waktu tersebut!", 
+                    conflicts = overlappingBookings 
+                });
+            }
 
             var booking = new Booking
             {
