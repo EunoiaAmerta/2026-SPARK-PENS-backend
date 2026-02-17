@@ -1,5 +1,6 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 using BCrypt.Net;
 using Microsoft.AspNetCore.Authorization;
@@ -44,6 +45,7 @@ public class AuthController : ControllerBase
                 // Admin exists, reset password to ensure it matches "admin"
                 // This handles cases where password hash was corrupted or different
                 existingAdmin.PasswordHash = BCrypt.Net.BCrypt.HashPassword("admin", 12);
+                existingAdmin.HasPassword = true;
                 await _context.SaveChangesAsync();
 
                 var jwtToken = GenerateJwtToken(existingAdmin);
@@ -67,6 +69,7 @@ public class AuthController : ControllerBase
                 Name = "Admin",
                 Role = "Admin",
                 PasswordHash = BCrypt.Net.BCrypt.HashPassword("admin", 12),
+                HasPassword = true,
                 CreatedAt = DateTime.UtcNow
             };
             _context.Users.Add(newUser);
@@ -133,32 +136,69 @@ public class AuthController : ControllerBase
                 return Unauthorized(new { message = "Invalid Google token" });
             }
 
-            // Check if user exists in database
-            var existingUser = await _context.Users
-                .FirstOrDefaultAsync(u => u.GoogleId == googleUser.Subject);
+            // Check if email is verified by Google
+            var emailVerified = googleUser.EmailVerified;
+            if (!emailVerified)
+            {
+                return BadRequest(new { message = "Email must be verified by Google" });
+            }
+
+            // FIRST: Check if user exists by Email (for account linking)
+            var existingUserByEmail = await _context.Users
+                .FirstOrDefaultAsync(u => u.Email.ToLower() == googleUser.Email.ToLower());
 
             User user;
-            if (existingUser == null)
+            bool needsPasswordSetup = false;
+
+            if (existingUserByEmail != null)
             {
-                // Create new user
-                user = new User
+                // User exists with this email - link GoogleId if not already linked
+                if (string.IsNullOrEmpty(existingUserByEmail.GoogleId))
                 {
-                    Email = googleUser.Email,
-                    Name = googleUser.Name,
-                    Role = "User",
-                    GoogleId = googleUser.Subject,
-                    CreatedAt = DateTime.UtcNow
-                };
-                _context.Users.Add(user);
+                    existingUserByEmail.GoogleId = googleUser.Subject;
+                }
+                
+                // Update name in case it changed
+                existingUserByEmail.Name = googleUser.Name;
+                
+                // Check if user needs to set password
+                needsPasswordSetup = !existingUserByEmail.HasPassword;
+                
                 await _context.SaveChangesAsync();
+                user = existingUserByEmail;
             }
             else
             {
-                // Update existing user info
-                existingUser.Email = googleUser.Email;
-                existingUser.Name = googleUser.Name;
-                await _context.SaveChangesAsync();
-                user = existingUser;
+                // Check if user exists by GoogleId
+                var existingUserByGoogleId = await _context.Users
+                    .FirstOrDefaultAsync(u => u.GoogleId == googleUser.Subject);
+
+                if (existingUserByGoogleId != null)
+                {
+                    // Update email and name
+                    existingUserByGoogleId.Email = googleUser.Email;
+                    existingUserByGoogleId.Name = googleUser.Name;
+                    needsPasswordSetup = !existingUserByGoogleId.HasPassword;
+                    
+                    await _context.SaveChangesAsync();
+                    user = existingUserByGoogleId;
+                }
+                else
+                {
+                    // Create new user - no password set yet (needs password setup)
+                    user = new User
+                    {
+                        Email = googleUser.Email,
+                        Name = googleUser.Name,
+                        Role = "User",
+                        GoogleId = googleUser.Subject,
+                        HasPassword = false, // Will need to set password later
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    _context.Users.Add(user);
+                    await _context.SaveChangesAsync();
+                    needsPasswordSetup = true;
+                }
             }
 
             var token = GenerateJwtToken(user);
@@ -172,13 +212,110 @@ public class AuthController : ControllerBase
                     Email = user.Email,
                     Name = user.Name,
                     Role = user.Role
-                }
+                },
+                NeedsPasswordSetup = needsPasswordSetup
             });
         }
         catch (Exception ex)
         {
             return StatusCode(500, new { message = "Google login failed", error = ex.Message });
         }
+    }
+
+    /// <summary>
+    /// Set password for user who logged in via Google (first time)
+    /// </summary>
+    [HttpPost("set-password")]
+    public async Task<IActionResult> SetPassword([FromBody] SetPasswordDto setPasswordDto)
+    {
+        var user = await _context.Users.FindAsync(setPasswordDto.UserId);
+        
+        if (user == null)
+        {
+            return NotFound(new { message = "User not found" });
+        }
+
+        // Hash and set the password
+        user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(setPasswordDto.NewPassword, 12);
+        user.HasPassword = true;
+        
+        await _context.SaveChangesAsync();
+
+        return Ok(new { message = "Password set successfully" });
+    }
+
+    /// <summary>
+    /// Request password reset - sends reset link via response
+    /// </summary>
+    [HttpPost("forgot-password")]
+    public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordDto forgotPasswordDto)
+    {
+        var user = await _context.Users
+            .FirstOrDefaultAsync(u => u.Email.ToLower() == forgotPasswordDto.Email.ToLower());
+
+        // Security: Don't reveal whether email exists or not
+        // Just return success for both cases
+        if (user == null)
+        {
+            // Security: Return same message to prevent email enumeration
+            return Ok(new { message = "If the email exists, a reset link has been sent" });
+        }
+
+        // Check if user has a password (Google-only users can't reset password this way)
+        if (!user.HasPassword)
+        {
+            return BadRequest(new { message = "This account uses Google login. Please login with Google." });
+        }
+
+        // Generate reset token
+        var resetToken = GenerateSecureToken();
+        user.ResetToken = resetToken;
+        user.ResetExpiry = DateTime.UtcNow.AddMinutes(30); // 30 minutes expiry
+        
+        await _context.SaveChangesAsync();
+
+        // Get frontend URL from configuration
+        var frontendUrl = _configuration["FrontendUrl"] ?? "http://localhost:5173";
+        var resetLink = $"{frontendUrl}/reset-password?token={resetToken}&email={user.Email}";
+
+        // Return the reset link (in production, this would be sent via email)
+        return Ok(new { 
+            message = "Password reset link generated",
+            resetLink = resetLink // For development/demo purposes
+        });
+    }
+
+    /// <summary>
+    /// Reset password using token
+    /// </summary>
+    [HttpPost("reset-password")]
+    public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordDto resetPasswordDto)
+    {
+        var user = await _context.Users
+            .FirstOrDefaultAsync(u => u.ResetToken == resetPasswordDto.Token);
+
+        if (user == null)
+        {
+            return BadRequest(new { message = "Invalid reset token" });
+        }
+
+        // Check if token is expired
+        if (user.ResetExpiry == null || user.ResetExpiry < DateTime.UtcNow)
+        {
+            return BadRequest(new { message = "Reset token has expired" });
+        }
+
+        // Hash and set new password
+        user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(resetPasswordDto.NewPassword, 12);
+        user.HasPassword = true;
+        
+        // Clear reset token
+        user.ResetToken = null;
+        user.ResetExpiry = null;
+        
+        await _context.SaveChangesAsync();
+
+        return Ok(new { message = "Password reset successfully" });
     }
 
     /// <summary>
@@ -237,6 +374,14 @@ public class AuthController : ControllerBase
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
 
+    private string GenerateSecureToken()
+    {
+        var bytes = new byte[64];
+        using var rng = RandomNumberGenerator.Create();
+        rng.GetBytes(bytes);
+        return Convert.ToBase64String(bytes);
+    }
+
     private async Task<GoogleUserInfo?> ValidateGoogleToken(string credential)
     {
         try
@@ -268,7 +413,8 @@ public class AuthController : ControllerBase
                 Subject = jwtToken.Subject ?? "",
                 Email = jwtToken.Claims.FirstOrDefault(c => c.Type == "email")?.Value ?? "",
                 Name = jwtToken.Claims.FirstOrDefault(c => c.Type == "name")?.Value ?? 
-                       jwtToken.Claims.FirstOrDefault(c => c.Type == "given_name")?.Value ?? "Google User"
+                       jwtToken.Claims.FirstOrDefault(c => c.Type == "given_name")?.Value ?? "Google User",
+                EmailVerified = jwtToken.Claims.FirstOrDefault(c => c.Type == "email_verified")?.Value == "true"
             };
         }
         catch
@@ -282,6 +428,7 @@ public class AuthController : ControllerBase
         public string Subject { get; set; } = "";
         public string Email { get; set; } = "";
         public string Name { get; set; } = "";
+        public bool EmailVerified { get; set; } = false;
     }
 }
 
