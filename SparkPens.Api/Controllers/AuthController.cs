@@ -340,11 +340,27 @@ public class AuthController : ControllerBase
     [HttpPost("reset-password")]
     public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordDto resetPasswordDto)
     {
+        // Debug: Log the received token
+        Console.WriteLine($"[ResetPassword] Received token: '{resetPasswordDto.Token}'");
+        
+        // Find user by token (case-sensitive exact match, trim whitespace)
         var user = await _context.Users
-            .FirstOrDefaultAsync(u => u.ResetToken == resetPasswordDto.Token);
-
+            .FirstOrDefaultAsync(u => u.ResetToken != null && u.ResetToken == resetPasswordDto.Token.Trim());
+        
         if (user == null)
         {
+            // Debug: Check what tokens exist in database
+            var allUsersWithTokens = await _context.Users
+                .Where(u => u.ResetToken != null)
+                .Select(u => new { u.Email, u.ResetToken, u.ResetExpiry })
+                .ToListAsync();
+            
+            Console.WriteLine($"[ResetPassword] Users with tokens in DB: {allUsersWithTokens.Count}");
+            foreach (var u in allUsersWithTokens)
+            {
+                Console.WriteLine($"[ResetPassword] - Email: {u.Email}, Token: '{u.ResetToken}', Expiry: {u.ResetExpiry}");
+            }
+            
             return BadRequest(new { message = "Invalid reset token" });
         }
 
