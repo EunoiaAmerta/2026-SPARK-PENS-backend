@@ -26,6 +26,15 @@ public class User
     [MaxLength(255)]
     public string? PasswordHash { get; set; }
     
+    // Flag to check if user has set a password (for Google login users)
+    public bool HasPassword { get; set; } = false;
+    
+    // Password reset fields
+    [MaxLength(255)]
+    public string? ResetToken { get; set; }
+    
+    public DateTime? ResetExpiry { get; set; }
+    
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 
