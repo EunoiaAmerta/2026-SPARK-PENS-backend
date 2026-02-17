@@ -1,4 +1,7 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
 using SparkPens.Api.Data;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -7,15 +10,44 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
-// 2. CORS Configuration (Penting untuk Frontend!)
+// 2. JWT Authentication Configuration
+var jwtKey = builder.Configuration["Jwt:Key"] ?? "SparkPensDefaultSecretKey12345678901234567890";
+var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "SparkPens";
+var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "SparkPensUsers";
+
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateLifetime = true,
+        ValidateIssuerSigningKey = true,
+        ValidIssuer = jwtIssuer,
+        ValidAudience = jwtAudience,
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
+    };
+});
+
+builder.Services.AddAuthorization();
+
+// 3. CORS Configuration (Penting untuk Frontend!)
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowFrontend", policy =>
-    {
-        policy.WithOrigins("http://localhost:3000", "http://localhost:5173") // Port React/Vite
-              .AllowAnyHeader()
-              .AllowAnyMethod();
-    });
+    options.AddPolicy("AllowVercel",
+        policy => policy.WithOrigins(
+            "https://sparkpens.vercel.app",
+            "http://localhost:5173",
+            "http://localhost:3000"
+        )
+                        .AllowAnyMethod()
+                        .AllowAnyHeader()
+                        .AllowCredentials());
 });
 
 builder.Services.AddControllers();
@@ -36,10 +68,19 @@ app.UseSwaggerUI(options =>
 app.UseHttpsRedirection();
 
 // Gunakan Policy CORS yang sudah dibuat di atas
-app.UseCors("AllowFrontend"); 
+app.UseCors("AllowVercel");
 
+app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+
+// Railway inject environment variable PORT
+var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
+
+app.Urls.Add($"http://0.0.0.0:{port}");
+
+app.MapGet("/", () => "SparkPens API Running 🚀");
+
 
 app.Run();

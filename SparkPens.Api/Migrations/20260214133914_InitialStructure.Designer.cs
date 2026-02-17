@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using SparkPens.Api.Data;
@@ -11,9 +12,11 @@ using SparkPens.Api.Data;
 namespace SparkPens.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260214133914_InitialStructure")]
+    partial class InitialStructure
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -28,13 +31,7 @@ namespace SparkPens.Api.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<DateTime?>("BookingDate")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime>("BookingEndDate")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime>("BookingStartDate")
+                    b.Property<DateTime>("BookingDate")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime>("CreatedDate")
@@ -57,6 +54,7 @@ namespace SparkPens.Api.Migrations
                         .HasColumnType("character varying(100)");
 
                     b.Property<string>("RequesterPhone")
+                        .IsRequired()
                         .HasColumnType("text");
 
                     b.Property<Guid>("RoomId")
@@ -113,45 +111,6 @@ namespace SparkPens.Api.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("Rooms", (string)null);
-                });
-
-            modelBuilder.Entity("SparkPens.Api.Models.User", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Email")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("character varying(255)");
-
-                    b.Property<string>("GoogleId")
-                        .HasMaxLength(255)
-                        .HasColumnType("character varying(255)");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("character varying(255)");
-
-                    b.Property<string>("PasswordHash")
-                        .HasMaxLength(255)
-                        .HasColumnType("character varying(255)");
-
-                    b.Property<string>("Role")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("Users");
                 });
 
             modelBuilder.Entity("SparkPens.Api.Models.Booking", b =>
