@@ -444,7 +444,14 @@ public class AuthController : ControllerBase
         var bytes = new byte[64];
         using var rng = RandomNumberGenerator.Create();
         rng.GetBytes(bytes);
-        return Convert.ToBase64String(bytes);
+        
+        // Use URL-safe Base64 encoding (replace + with -, / with _, and remove = padding)
+        var base64 = Convert.ToBase64String(bytes)
+            .Replace('+', '-')
+            .Replace('/', '_')
+            .TrimEnd('=');
+        
+        return base64;
     }
 
     private async Task<GoogleUserInfo?> ValidateGoogleToken(string credential)
