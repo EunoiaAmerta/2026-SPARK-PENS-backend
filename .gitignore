@@ -3,3 +3,5 @@ obj/
 *.user
 *.lock.json
 appsettings.json
+SQL_add_password_field.sql
+SQL_admin_user.sql
