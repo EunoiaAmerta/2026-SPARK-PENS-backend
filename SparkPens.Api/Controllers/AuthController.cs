@@ -31,32 +31,89 @@ public class AuthController : ControllerBase
     [HttpPost("login")]
     public async Task<IActionResult> Login([FromBody] LoginDto loginDto)
     {
+        // First, check if this is default admin credentials BEFORE searching database
+        // This allows auto-creation on first login
+        if (loginDto.Username.ToLower() == "admin" && loginDto.Password == "admin")
+        {
+            // Check if admin user already exists
+            var existingAdmin = await _context.Users
+                .FirstOrDefaultAsync(u => u.Role == "Admin");
+
+            if (existingAdmin != null)
+            {
+                // Admin exists, verify password
+                if (!BCrypt.Net.BCrypt.Verify(loginDto.Password, existingAdmin.PasswordHash))
+                {
+                    return Unauthorized(new { message = "Invalid credentials" });
+                }
+
+                var jwtToken = GenerateJwtToken(existingAdmin);
+                return Ok(new AuthResponseDto
+                {
+                    Token = jwtToken,
+                    User = new UserDto
+                    {
+                        Id = existingAdmin.Id,
+                        Email = existingAdmin.Email,
+                        Name = existingAdmin.Name,
+                        Role = existingAdmin.Role
+                    }
+                });
+            }
+
+            // Create default admin user
+            var newUser = new User
+            {
+                Email = "admin@sparkpens.com",
+                Name = "Admin",
+                Role = "Admin",
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword("admin", 12),
+                CreatedAt = DateTime.UtcNow
+            };
+            _context.Users.Add(newUser);
+            await _context.SaveChangesAsync();
+
+            var adminToken = GenerateJwtToken(newUser);
+            return Ok(new AuthResponseDto
+            {
+                Token = adminToken,
+                User = new UserDto
+                {
+                    Id = newUser.Id,
+                    Email = newUser.Email,
+                    Name = newUser.Name,
+                    Role = newUser.Role
+                }
+            });
+        }
+
         // Find user by email/username
-        var user = await _context.Users
+        var dbUser = await _context.Users
             .FirstOrDefaultAsync(u => u.Email == loginDto.Username || u.Name == loginDto.Username);
         
-        if (user == null)
+        // If user not found
+        if (dbUser == null)
         {
             return Unauthorized(new { message = "User not found" });
         }
         
         // Verify password using BCrypt
-        if (!BCrypt.Net.BCrypt.Verify(loginDto.Password, user.PasswordHash))
+        if (!BCrypt.Net.BCrypt.Verify(loginDto.Password, dbUser.PasswordHash))
         {
             return Unauthorized(new { message = "Invalid credentials" });
         }
 
-        var token = GenerateJwtToken(user);
+        var userToken = GenerateJwtToken(dbUser);
         
         return Ok(new AuthResponseDto
         {
-            Token = token,
+            Token = userToken,
             User = new UserDto
             {
-                Id = user.Id,
-                Email = user.Email,
-                Name = user.Name,
-                Role = user.Role
+                Id = dbUser.Id,
+                Email = dbUser.Email,
+                Name = dbUser.Name,
+                Role = dbUser.Role
             }
         });
     }
