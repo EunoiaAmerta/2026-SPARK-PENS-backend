@@ -26,6 +26,7 @@ public class SetPasswordDto
 public class ForgotPasswordDto
 {
     public string Email { get; set; } = string.Empty;
+    public string? FrontendUrl { get; set; }
 }
 
 // DTO for reset password

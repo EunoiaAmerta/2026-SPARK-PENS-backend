@@ -253,18 +253,16 @@ public class AuthController : ControllerBase
         var user = await _context.Users
             .FirstOrDefaultAsync(u => u.Email.ToLower() == forgotPasswordDto.Email.ToLower());
 
-        // Security: Don't reveal whether email exists or not
-        // Just return success for both cases
+        // If user not found - return error so frontend can show warning
         if (user == null)
         {
-            // Security: Return same message to prevent email enumeration
-            return Ok(new { message = "If the email exists, a reset link has been sent" });
+            return NotFound(new { message = "Email belum terdaftar di sistem kami." });
         }
 
         // Check if user has a password (Google-only users can't reset password this way)
         if (!user.HasPassword)
         {
-            return BadRequest(new { message = "This account uses Google login. Please login with Google." });
+            return BadRequest(new { message = "Akun ini menggunakan login Google. Silakan login dengan Google." });
         }
 
         // Generate reset token
@@ -274,15 +272,66 @@ public class AuthController : ControllerBase
         
         await _context.SaveChangesAsync();
 
-        // Get frontend URL from configuration
-        var frontendUrl = _configuration["FrontendUrl"] ?? "http://localhost:5173";
+        // Use provided frontendUrl if available, otherwise detect from request
+        string frontendUrl;
+        if (!string.IsNullOrEmpty(forgotPasswordDto.FrontendUrl))
+        {
+            // Use the frontend URL provided by the client (e.g., localhost:5173 or https://spark-pens.vercel.app)
+            frontendUrl = forgotPasswordDto.FrontendUrl.TrimEnd('/');
+        }
+        else
+        {
+            // Fallback to detection from request headers
+            frontendUrl = DetectFrontendUrl(Request);
+        }
+        
         var resetLink = $"{frontendUrl}/reset-password?token={resetToken}&email={user.Email}";
 
         // Return the reset link (in production, this would be sent via email)
         return Ok(new { 
-            message = "Password reset link generated",
-            resetLink = resetLink // For development/demo purposes
+            message = "Link reset berhasil dibuat",
+            resetLink = resetLink
         });
+    }
+
+    /// <summary>
+    /// Detect frontend URL based on request origin (supports both localhost and Vercel)
+    /// </summary>
+    private string DetectFrontendUrl(HttpRequest request)
+    {
+        // Check the Origin header to determine the frontend URL
+        var origin = request.Headers["Origin"].ToString();
+        
+        if (!string.IsNullOrEmpty(origin))
+        {
+            // If request comes from localhost, use localhost
+            if (origin.Contains("localhost"))
+            {
+                return "http://localhost:5173";
+            }
+            // If request comes from Vercel, use Vercel URL
+            if (origin.Contains("vercel.app") || origin.Contains("spark-pens"))
+            {
+                return "https://spark-pens.vercel.app";
+            }
+        }
+
+        // Fallback: Check Referer header
+        var referer = request.Headers["Referer"].ToString();
+        if (!string.IsNullOrEmpty(referer))
+        {
+            if (referer.Contains("localhost"))
+            {
+                return "http://localhost:5173";
+            }
+            if (referer.Contains("vercel.app") || referer.Contains("spark-pens"))
+            {
+                return "https://spark-pens.vercel.app";
+            }
+        }
+
+        // Default: Use config or fallback to Vercel
+        return _configuration["FrontendUrl"] ?? "https://spark-pens.vercel.app";
     }
 
     /// <summary>
